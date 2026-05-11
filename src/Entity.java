@@ -3,6 +3,7 @@ import java.awt.*;
 public class Entity {
     public int row, col;
     public Color color;
+    public String dir = "DOWN"; // Default direction
 
     public Entity(int r, int c, Color color) {
         this.row = r;

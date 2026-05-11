@@ -7,29 +7,38 @@ public class Main {
         window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         window.setLayout(new BorderLayout());
 
-        // 1. Create the Panel
         GamePanel gamePanel = new GamePanel();
 
-        // 2. Wrap it in a ScrollPane
         JScrollPane scrollPane = new JScrollPane(gamePanel);
-        scrollPane.setPreferredSize(new Dimension(640, 640)); // Fixed Viewport size
+        scrollPane.setPreferredSize(new Dimension(800, 600)); // Standard window size
 
+        // Hide scrollbars for the "Game" feel
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
 
-        // OPTIONAL: Make scrolling feel faster
-        scrollPane.getVerticalScrollBar().setUnitIncrement(64);
-        scrollPane.getHorizontalScrollBar().setUnitIncrement(64);
-
-        // 3. Add ONLY the scrollPane to the center
         window.add(scrollPane, BorderLayout.CENTER);
-
-        // 4. Add the control panel
-        ControlPanel controlPanel = new ControlPanel(gamePanel);
-        window.add(controlPanel, BorderLayout.EAST);
+        window.add(new ControlPanel(gamePanel), BorderLayout.EAST);
 
         window.pack();
         window.setLocationRelativeTo(null);
         window.setVisible(true);
+
+        // --- NEW: THE AUTO-SCROLL TIMER ---
+        // This keeps the scrollpane viewport centered on the player
+        Timer scrollTimer = new Timer(16, e -> {
+            int playerX = gamePanel.player.col * gamePanel.TILE_SIZE;
+            int playerY = gamePanel.player.row * gamePanel.TILE_SIZE;
+
+            // Calculate center
+            int centerX = playerX - (scrollPane.getViewport().getWidth() / 2);
+            int centerY = playerY - (scrollPane.getViewport().getHeight() / 2);
+
+            // Set the scroll position
+            scrollPane.getViewport().setViewPosition(new Point(
+                    Math.max(0, Math.min(centerX, gamePanel.getWidth() - scrollPane.getViewport().getWidth())),
+                    Math.max(0, Math.min(centerY, gamePanel.getHeight() - scrollPane.getViewport().getHeight()))
+            ));
+        });
+        scrollTimer.start();
     }
 }

@@ -31,7 +31,8 @@ public class Pathfinder {
         for (int r = 0; r < gp.ROWS; r++) {
             for (int c = 0; c < gp.COLS; c++) {
                 nodes[r][c].walkable = (gp.grid[r][c] != 1);
-                nodes[r][c].gCost = 999; // Reset to "infinity"
+
+                nodes[r][c].gCost = 99999;  // Reset to "infinity"
                 nodes[r][c].parent = null;
             }
         }
@@ -62,7 +63,12 @@ public class Pathfinder {
     }
 
     private void checkNeighbors() {
-        int[][] dirs = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+        // 8 directions: Up, Down, Left, Right + the 4 diagonals
+        int[][] dirs = {
+                {-1, 0}, {1, 0}, {0, -1}, {0, 1},   // Straight
+                {-1, -1}, {-1, 1}, {1, -1}, {1, 1}  // Diagonals
+        };
+
         for (int[] d : dirs) {
             int nr = currentNode.row + d[0];
             int nc = currentNode.col + d[1];
@@ -71,20 +77,31 @@ public class Pathfinder {
                 Node neighbor = nodes[nr][nc];
                 if (!neighbor.walkable || closedSet.contains(neighbor)) continue;
 
-                int gScore = currentNode.gCost + 1;
+                // Straight moves cost 10, Diagonal moves cost 14 (approx 1.41)
+                int moveCost = (d[0] == 0 || d[1] == 0) ? 10 : 14;
+                int gScore = currentNode.gCost + moveCost;
+
                 if (gScore < neighbor.gCost) {
                     neighbor.parent = currentNode;
                     neighbor.gCost = gScore;
                     neighbor.hCost = calculateH(neighbor);
                     neighbor.fCost = neighbor.gCost + neighbor.hCost;
-                    if (!openList.contains(neighbor)) openList.add(neighbor);
+
+                    if (!openList.contains(neighbor)) {
+                        openList.add(neighbor);
+                    }
                 }
             }
         }
     }
 
     private int calculateH(Node n) {
-        return Math.abs(n.row - goalNode.row) + Math.abs(n.col - goalNode.col);
+        int dx = Math.abs(n.col - goalNode.col);
+        int dy = Math.abs(n.row - goalNode.row);
+
+        // D = 10 (straight), D2 = 14 (diagonal)
+        // Formula: D * (dx + dy) + (D2 - 2 * D) * min(dx, dy)
+        return 10 * (dx + dy) + (14 - 20) * Math.min(dx, dy);
     }
 
     private void trackPath() {

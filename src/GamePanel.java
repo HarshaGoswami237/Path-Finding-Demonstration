@@ -2,57 +2,73 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.ArrayList;
-import javax.swing.SwingUtilities;
+import java.io.*;
+import java.util.Scanner;
 
 public class GamePanel extends JPanel {
-    public final int ROWS = 25, COLS = 25, TILE_SIZE = 64;
-    public int[][] grid = new int[ROWS][COLS];
+    // 1. Grid Settings (Optimized for 1920x1760 image at 32px tiles)
+    public final int COLS = 60;
+    public final int ROWS = 55;
+    public final int TILE_SIZE = 32;
 
+    public int[][] grid = new int[ROWS][COLS];
     public String selectedTool = "Wall";
-    public Entity player = new Entity(0, 0, Color.WHITE);
-    public Entity npc = new Entity(9, 9, Color.CYAN);
+    public Entity player = new Entity(2, 2, Color.WHITE);
+    public Entity npc = new Entity(3, 2, Color.CYAN);
+
     public boolean isRunning = false;
     public boolean npcActive = true;
+    public boolean showDebugGrid = true;
 
-    // Zoom and Throttling
-    private double zoom = 1.0;
+    private ImageIcon background;
+    private ImageIcon playerGif;
+    private ImageIcon npcGif;
+
     private long lastMoveTime = 0;
-    private final long MOVE_COOLDOWN = 150;
+    private final long MOVE_COOLDOWN = 150; // Adjusted for 32px movement speed
 
     Pathfinder pathfinder;
     ArrayList<Node> path = new ArrayList<>();
     Timer movementTimer;
 
     public GamePanel() {
-        setPreferredSize(new Dimension(COLS * TILE_SIZE, ROWS * TILE_SIZE));
-        setBackground(new Color(34, 139, 34));
+        // Set dimensions to match high-res image
+        setPreferredSize(new Dimension(1920, 1760));
+        setDoubleBuffered(true);
+
         pathfinder = new Pathfinder(this);
         setupKeyBindings();
 
+        // Load Sprites and Background
+        try {
+            background = new ImageIcon(getClass().getResource("/res/Harvest BG.png"));
+            playerGif = new ImageIcon(getClass().getResource("/res/1.1run.gif"));
+            npcGif = new ImageIcon(getClass().getResource("/res/2.1run.gif"));
+        } catch (Exception e) {
+            System.out.println("Resource Error: Check /res/ folder!");
+        }
+
+        // Initialize Level from File or Default
+        loadPreBuiltLevel();
+
+        // Mouse Listener for Editor Painting
         addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                // Adjust coordinates based on zoom
-                int r = (int) (e.getY() / (TILE_SIZE * zoom));
-                int c = (int) (e.getX() / (TILE_SIZE * zoom));
+                int c = e.getX() / TILE_SIZE;
+                int r = e.getY() / TILE_SIZE;
                 if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
                     applyTool(r, c);
                 }
             }
         });
 
-        // Add MouseWheelListener for Zooming (Ctrl + Wheel)
-        addMouseWheelListener(e -> {
-            if (e.isControlDown()) {
-                if (e.getPreciseWheelRotation() < 0) zoom += 0.1;
-                else zoom = Math.max(0.1, zoom - 0.1);
-                repaint();
-                e.consume();
-            }
-        });
-
+        // NPC Movement logic (Runs at fixed interval)
         movementTimer = new Timer(500, e -> moveNPC());
         movementTimer.start();
+
+        // Global Repaint Timer (60 FPS)
+        new Timer(16, e -> repaint()).start();
     }
 
     private void applyTool(int r, int c) {
@@ -62,7 +78,6 @@ public class GamePanel extends JPanel {
             case "NPC" -> { npc.row = r; npc.col = c; npcActive = true; }
         }
         updatePath();
-        repaint();
     }
 
     public void updatePath() {
@@ -73,13 +88,16 @@ public class GamePanel extends JPanel {
     private void moveNPC() {
         if (!isRunning || !npcActive) return;
         updatePath();
+
         if (path != null && !path.isEmpty()) {
             Node nextStep = path.get(0);
-            if (nextStep.row != player.row || nextStep.col != player.col) {
-                npc.row = nextStep.row;
-                npc.col = nextStep.col;
-            }
-            repaint();
+
+            // Update direction for sprite flipping
+            if (nextStep.col < npc.col) npc.dir = "LEFT";
+            else if (nextStep.col > npc.col) npc.dir = "RIGHT";
+
+            npc.row = nextStep.row;
+            npc.col = nextStep.col;
         }
     }
 
@@ -88,76 +106,131 @@ public class GamePanel extends JPanel {
         super.paintComponent(g);
         Graphics2D g2 = (Graphics2D) g;
 
-        // Apply Zoom Transform
-        g2.scale(zoom, zoom);
+        // 1. Draw Environment
+        if (background != null) {
+            g2.drawImage(background.getImage(), 0, 0, 1920, 1760, null);
+        }
 
-        for (int r = 0; r < ROWS; r++) {
-            for (int c = 0; c < COLS; c++) {
-                if (grid[r][c] == 1) g2.setColor(new Color(50, 50, 50));
-                else g2.setColor(new Color(60, 179, 113));
-
-                g2.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                g2.setColor(new Color(0, 0, 0, 40));
-                g2.drawRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        // 2. Draw Editor/Collision Boxes (Transparent Black)
+        if (showDebugGrid) {
+            g2.setColor(new Color(0, 0, 0, 150));
+            for (int r = 0; r < ROWS; r++) {
+                for (int c = 0; c < COLS; c++) {
+                    if (grid[r][c] == 1) {
+                        g2.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    }
+                }
             }
         }
 
+        // 3. Draw Pathfinding "Ghost" Path
         if (path != null) {
-            g2.setColor(new Color(255, 255, 0, 100));
+            g2.setColor(new Color(255, 255, 0, 80));
             for (Node n : path) {
-                g2.fillRect(n.col * TILE_SIZE + 20, n.row * TILE_SIZE + 20, 24, 24);
+                g2.fillRect(n.col * TILE_SIZE, n.row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
             }
         }
 
-        player.draw(g2, TILE_SIZE);
-        if (npcActive) npc.draw(g2, TILE_SIZE);
+        // 4. Draw Characters (Handling Sprite size and flipping)
+        int spriteSize = (int)(TILE_SIZE * 2.0); // 64px character on 32px grid
+        int offset = (spriteSize - TILE_SIZE) / 2;
+
+        if (playerGif != null) {
+            drawEntity(g2, player, playerGif, spriteSize, offset);
+        }
+        if (npcActive && npcGif != null) {
+            drawEntity(g2, npc, npcGif, spriteSize, offset);
+        }
+    }
+
+    private void drawEntity(Graphics2D g2, Entity e, ImageIcon icon, int size, int offset) {
+        int x = e.col * TILE_SIZE - offset;
+        int y = e.row * TILE_SIZE - offset;
+
+        if (e.dir.equals("LEFT")) {
+            // Flip image horizontally
+            g2.drawImage(icon.getImage(), x + size, y, -size, size, null);
+        } else {
+            g2.drawImage(icon.getImage(), x, y, size, size, null);
+        }
     }
 
     private void setupKeyBindings() {
         InputMap im = getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
         ActionMap am = getActionMap();
+
+        // Cardinal Directions
         im.put(KeyStroke.getKeyStroke("W"), "moveUp");
         im.put(KeyStroke.getKeyStroke("S"), "moveDown");
         im.put(KeyStroke.getKeyStroke("A"), "moveLeft");
         im.put(KeyStroke.getKeyStroke("D"), "moveRight");
-        am.put("moveUp", new MoveAction(0, -1));
-        am.put("moveDown", new MoveAction(0, 1));
-        am.put("moveLeft", new MoveAction(-1, 0));
-        am.put("moveRight", new MoveAction(1, 0));
-    }
 
-    public void scrollToPlayer() {
-        JScrollPane scrollPane = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, this);
-        if (scrollPane != null) {
-            int playerX = (int)(player.col * TILE_SIZE * zoom);
-            int playerY = (int)(player.row * TILE_SIZE * zoom);
-            int viewW = scrollPane.getViewport().getWidth();
-            int viewH = scrollPane.getViewport().getHeight();
-            int scrollX = playerX - (viewW / 2) + (int)(TILE_SIZE * zoom / 2);
-            int scrollY = playerY - (viewH / 2) + (int)(TILE_SIZE * zoom / 2);
-            scrollX = Math.max(0, Math.min(scrollX, (int)(getPreferredSize().width * zoom) - viewW));
-            scrollY = Math.max(0, Math.min(scrollY, (int)(getPreferredSize().height * zoom) - viewH));
-            scrollPane.getViewport().setViewPosition(new Point(scrollX, scrollY));
-        }
+        // Diagonal Directions
+        im.put(KeyStroke.getKeyStroke("Q"), "moveNW");
+        im.put(KeyStroke.getKeyStroke("E"), "moveNE");
+        im.put(KeyStroke.getKeyStroke("Z"), "moveSW");
+        im.put(KeyStroke.getKeyStroke("C"), "moveSE");
+
+        am.put("moveUp", new MoveAction(0, -1, "UP"));
+        am.put("moveDown", new MoveAction(0, 1, "DOWN"));
+        am.put("moveLeft", new MoveAction(-1, 0, "LEFT"));
+        am.put("moveRight", new MoveAction(1, 0, "RIGHT"));
+        am.put("moveNW", new MoveAction(-1, -1, "LEFT"));
+        am.put("moveNE", new MoveAction(1, -1, "RIGHT"));
+        am.put("moveSW", new MoveAction(-1, 1, "LEFT"));
+        am.put("moveSE", new MoveAction(1, 1, "RIGHT"));
     }
 
     private class MoveAction extends AbstractAction {
         int dx, dy;
-        MoveAction(int dx, int dy) { this.dx = dx; this.dy = dy; }
+        String dir;
+        MoveAction(int dx, int dy, String dir) { this.dx = dx; this.dy = dy; this.dir = dir; }
+
         @Override
         public void actionPerformed(ActionEvent e) {
             long currentTime = System.currentTimeMillis();
             if (currentTime - lastMoveTime < MOVE_COOLDOWN) return;
-            lastMoveTime = currentTime;
+
             int nextR = player.row + dy;
             int nextC = player.col + dx;
-            if (nextR >= 0 && nextR < ROWS && nextC >= 0 && nextC < COLS && grid[nextR][nextC] != 1) {
-                player.row = nextR;
-                player.col = nextC;
-                updatePath();
-                scrollToPlayer();
-                repaint();
+
+            if (nextR >= 0 && nextR < ROWS && nextC >= 0 && nextC < COLS) {
+                if (grid[nextR][nextC] != 1) {
+                    // Prevent corner cutting
+                    if (dx != 0 && dy != 0) {
+                        if (grid[player.row][nextC] == 1 && grid[nextR][player.col] == 1) return;
+                    }
+                    player.row = nextR;
+                    player.col = nextC;
+                    player.dir = dir;
+                    lastMoveTime = currentTime;
+                    updatePath();
+                }
             }
         }
+    }
+
+    public void saveMap() {
+        try (PrintWriter out = new PrintWriter(new FileWriter("mapdata.txt"))) {
+            for (int r = 0; r < ROWS; r++) {
+                for (int c = 0; c < COLS; c++) out.print(grid[r][c] + " ");
+                out.println();
+            }
+            JOptionPane.showMessageDialog(this, "Map Saved!");
+        } catch (IOException e) { e.printStackTrace(); }
+    }
+
+    public void loadPreBuiltLevel() {
+        File file = new File("mapdata.txt");
+        if (file.exists()) {
+            try (Scanner sc = new Scanner(file)) {
+                for (int r = 0; r < ROWS; r++) {
+                    for (int c = 0; c < COLS; c++) {
+                        if (sc.hasNextInt()) grid[r][c] = sc.nextInt();
+                    }
+                }
+            } catch (FileNotFoundException e) { e.printStackTrace(); }
+        }
+        updatePath();
     }
 }
